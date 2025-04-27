@@ -1,0 +1,24 @@
+services:
+  db:
+    image: postgres:latest
+    container_name: postgres_db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+  
+  crawler:
+    build:
+      context: .
+      dockerfile: dockerfile/python.Dockerfile
+    container_name: web_crawler
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: python src/crawler.py
+volumes:
+  db_data:
