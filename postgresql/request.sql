@@ -45,5 +45,14 @@ ORDER BY
   p.id_auteur, year, week;
 
 -- Get the top author per number of posts (in the available data set)
-select * from (select id_auteur , count(*) as number_post from post p group by id_auteur) as p order by  number_post  desc
+SELECT * 
+FROM (
+    SELECT 
+    id_auteur , 
+    count(*) AS number_post 
+    FROM post p 
+    GROUP BY id_auteur
+    ) AS p 
+    ORDER BY  
+    number_post  DESC
 

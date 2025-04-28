@@ -56,7 +56,10 @@ def parse_subreddit(response: Response) -> List[Dict]:
             attachment_link = box.xpath(".//shreddit-player/@preview").get()
         else:
             attachment_link = box.xpath(".//div[@slot='thumbnail']/a/@href").get()
-            text = re.sub(r'<[^>]+>','',  box.xpath(f'.//div[@id="{box.xpath(".//shreddit-post/@id").get()}-post-rtjson-content"]').get())
+            ##sometimes the post is just a title
+            uneclean_text = box.xpath(f'.//div[@id="{box.xpath(".//shreddit-post/@id").get()}-post-rtjson-content"]').get()
+            if uneclean_text: 
+                text = re.sub(r'<[^>]+>','', uneclean_text)
         post_data.append({
             "authorProfile": "https://www.reddit.com/user/" + author if author else None,
             "authorId": box.xpath(".//shreddit-post/@author-id").get() if author != '[deleted]' else 'delete',            
@@ -74,18 +77,28 @@ def parse_subreddit(response: Response) -> List[Dict]:
     cursor_id = selector.xpath("//shreddit-post/@more-posts-cursor").get()
     return {"post_data": post_data, "info": info, "cursor": cursor_id}
 
+
 async def parse_user(data:List[Dict]) -> List[Dict]:
     """parse user karma and cake day from the user profile impossible to get it 
         from the main page (use selenium) in the future """
     for user in data["post_data"]:
-        response = await client.get(user["authorProfile"])
-        selector = Selector(response.text)
-        karma_value = selector.xpath(".//span[@data-testid='karma-number']/text()").getall()
-        if len(karma_value) > 0 :
-            user_karma = karma_value[0].strip()
-            comment_user_karma = karma_value[1].strip()
-            cake_day = selector.xpath(".//time[@data-testid='cake-day']/text()").get().strip()
-            user.update({'user_karma': int(user_karma.replace(',', '')),'comment_user_karma' : int(comment_user_karma.replace(',', '')), 'cake_day': cake_day})
+        try :
+            response = await client.get(user["authorProfile"])
+        except TimeoutException:
+            log.error(f"Request to {user["authorProfile"]} timed out.")
+        except HTTPStatusError as exc:
+            log.error(f"HTTP error: {exc.response.status_code} for {user["authorProfile"]}")
+        if response.status_code == 200:
+            selector = Selector(response.text)
+            karma_value = selector.xpath(".//span[@data-testid='karma-number']/text()").getall()
+            if len(karma_value) > 0 :
+                user_karma = karma_value[0].strip()
+                comment_user_karma = karma_value[1].strip()
+                cake_day = selector.xpath(".//time[@data-testid='cake-day']/text()").get().strip()
+                user.update({'user_karma': int(user_karma.replace(',', '')),'comment_user_karma' : int(comment_user_karma.replace(',', '')), 'cake_day': cake_day})
+            else:
+                log.warning(f"User {user['authorId']} not found for {user["authorProfile"]}")
+                user.update({'user_karma': -1,'comment_user_karma' : -1, 'cake_day': None}) ## reddit return 200 even if the user is deleted
         else:
             log.warning(f"User {user['authorId']} not found for {user["authorProfile"]}")
             user.update({'user_karma': -1,'comment_user_karma' : -1, 'cake_day': None})
@@ -107,11 +120,13 @@ async def scrape_subreddit(subreddit_id: str, sort: Union["new", "hot", "old"], 
     subreddit_data["info"] = data["info"]
     subreddit_data["posts"] = data["post_data"]
     cursor = data["cursor"]
+    old_cursor = cursor
 
     def make_pagination_url(cursor_id: str):
-        return f"https://www.reddit.com/svc/shreddit/community-more-posts/hot/?after={cursor_id}%3D%3D&t=DAY&name=AskMec&feedLength=3&sort={sort}" 
-        
-    while cursor and (max_pages is None or max_pages > 0):
+        return f"https://www.reddit.com/svc/shreddit/community-more-posts/hot/?after={cursor_id}%3D%3D&t=year&name=AskMec&feedLength=3&sort={sort}" 
+    while (max_pages is None or max_pages > 0):
+        if cursor == None:
+            cursor = old_cursor
         url = make_pagination_url(cursor)
         log.debug(f"Moving to page {max_pages}")
         try:
@@ -124,10 +139,14 @@ async def scrape_subreddit(subreddit_id: str, sort: Union["new", "hot", "old"], 
             data = parse_subreddit(response)
             data = await parse_user(data)
             cursor = data["cursor"]
+            old_cursor = cursor
             post_data = data["post_data"]
             subreddit_data["posts"].extend(post_data)
             if max_pages is not None:
                 max_pages -= 1
+        else:
+            log.error(f"Error fetching data from {url}")
+            break
         log.success(f"scraped {len(subreddit_data['posts'])} posts from the rubreddit: r/{subreddit_id}")
     return subreddit_data
 
@@ -145,7 +164,7 @@ async def run(args : argparse.Namespace):
     data = await scrape_subreddit(
         subreddit_id=subreddit_id,
         sort="new",
-        max_pages=2
+        max_pages=100
     )
     if args.debug:
         with open(args.debug, "w", encoding="utf-8") as f:

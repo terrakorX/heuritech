@@ -83,7 +83,6 @@ def bulk_insert(data: dict) -> (object, object):
             post["authorProfile"],
         )
     ]
-
     post_args = [
         elem
         for post in data["posts"]
@@ -114,7 +113,6 @@ def pg_query(conn: connection, query: str, args: Optional[list] = None):
         try:
             cusor = conn.cursor()
             response = cusor.execute(query, args)
-            print(response.rowcount)
             conn.commit()
             return response.rowcount
         except (Exception, psycopg.DatabaseError) as error:
