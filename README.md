@@ -50,3 +50,11 @@ docker compose up ( si vous voulez voir l'avancement du crawler)
 ```
 
 on peut ajouter le `--debug <nom du fichier.json>` pour extraire les données dans un fichier `.json` 
+
+Pour avoir les données crawlées de la base de données, il faut télécharger le fichier zip et : 
+```bash 
+unzip db.zip
+mv db/* heuritech/ ##copier l'intérieur du dossier db à la racine du repo
+docker compose up -d db 
+```
+Le Docker devrait avoir les données
